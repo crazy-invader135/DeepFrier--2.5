@@ -29,14 +29,16 @@ button {
     font-weight:bold;
 }
 button:hover { background:#66bb6a; }
-input[type=range], input[type=number] { width:100%; }
+input[type=range], input[type=number] {
+    width:100%;
+}
 hr { border:1px solid #333; }
 </style>
 </head>
 <body>
 
 <h1>🎧 MP3 Quality Reducer</h1>
-<p>AUTO mode — trims only if you want</p>
+<p>AUTO mode with custom speed</p>
 
 <div class="box">
 <input type="file" id="fileInput" accept="audio/*"><br><br>
@@ -50,6 +52,11 @@ hr { border:1px solid #333; }
 
 <label>End Time (seconds — optional)</label>
 <input type="number" id="endTime" placeholder="Full length">
+
+<hr>
+
+<label>Speed (0.01 – 25×)</label>
+<input type="number" id="speed" value="1" min="0.01" max="25" step="any">
 
 <hr>
 
@@ -71,7 +78,7 @@ hr { border:1px solid #333; }
 <a id="download" download="processed.wav">Download</a>
 
 <script>
-const sr = sampleRate, bd = bitDepth, dist = distortion;
+const sr = sampleRate, bd = bitDepth, dist = distortion, spd = speed;
 let lastURL = null;
 
 function updateLabels(){
@@ -85,6 +92,7 @@ function applyAuto(){
     sr.value = 22050;
     bd.value = 10;
     dist.value = 5;
+    spd.value = 1;
     updateLabels();
 }
 applyAuto();
@@ -92,13 +100,15 @@ applyAuto();
 async function processAudio(){
     const file = fileInput.files[0];
     if(!file) return alert("Upload an audio file first");
-
     if(lastURL) URL.revokeObjectURL(lastURL);
+
+    let speedVal = parseFloat(spd.value);
+    if(isNaN(speedVal)) speedVal = 1;
+    speedVal = Math.min(25, Math.max(0.01, speedVal));
 
     const ctx = new AudioContext();
     const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
 
-    // Fallback logic
     const startVal = startTime.value.trim();
     const endVal = endTime.value.trim();
 
@@ -123,14 +133,17 @@ async function processAudio(){
         );
     }
 
+    const outLength = Math.floor((length / speedVal) * (sr.value / buffer.sampleRate));
+
     const offline = new OfflineAudioContext(
         trimmed.numberOfChannels,
-        Math.floor(length * (sr.value / buffer.sampleRate)),
+        outLength,
         sr.value
     );
 
     const src = offline.createBufferSource();
     src.buffer = trimmed;
+    src.playbackRate.value = speedVal;
 
     const shaper = offline.createWaveShaper();
     shaper.curve = makeDistortionCurve(dist.value);
@@ -150,46 +163,47 @@ async function processAudio(){
 }
 
 function makeDistortionCurve(a){
-    const n=44100, curve=new Float32Array(n), k=a*8;
+    const n = 44100, curve = new Float32Array(n), k = a * 8;
     for(let i=0;i<n;i++){
-        const x=i*2/n-1;
-        curve[i]=Math.tanh(x*k);
+        const x = i * 2 / n - 1;
+        curve[i] = Math.tanh(x * k);
     }
     return curve;
 }
 
 function bitCrush(buf,bits){
-    const step=Math.pow(0.5,bits);
+    const step = Math.pow(0.5, bits);
     for(let c=0;c<buf.numberOfChannels;c++){
-        const d=buf.getChannelData(c);
+        const d = buf.getChannelData(c);
         for(let i=0;i<d.length;i++)
-            d[i]=Math.round(d[i]/step)*step;
+            d[i] = Math.round(d[i] / step) * step;
     }
 }
 
 function bufferToWave(buf){
-    const len=buf.length*buf.numberOfChannels*2+44;
-    const view=new DataView(new ArrayBuffer(len));
-    let o=0;
-    const w=s=>{for(let i=0;i<s.length;i++)view.setUint8(o++,s.charCodeAt(i));};
+    const len = buf.length * buf.numberOfChannels * 2 + 44;
+    const view = new DataView(new ArrayBuffer(len));
+    let o = 0;
+    const w = s => { for(let i=0;i<s.length;i++) view.setUint8(o++, s.charCodeAt(i)); };
 
-    w("RIFF"); view.setUint32(o,len-8,true); o+=4;
-    w("WAVEfmt "); view.setUint32(o,16,true); o+=4;
-    view.setUint16(o,1,true); o+=2;
-    view.setUint16(o,buf.numberOfChannels,true); o+=2;
-    view.setUint32(o,buf.sampleRate,true); o+=4;
-    view.setUint32(o,buf.sampleRate*2,true); o+=4;
-    view.setUint16(o,buf.numberOfChannels*2,true); o+=2;
-    view.setUint16(o,16,true); o+=2;
-    w("data"); view.setUint32(o,len-o-4,true); o+=4;
+    w("RIFF"); view.setUint32(o, len-8, true); o+=4;
+    w("WAVEfmt "); view.setUint32(o, 16, true); o+=4;
+    view.setUint16(o, 1, true); o+=2;
+    view.setUint16(o, buf.numberOfChannels, true); o+=2;
+    view.setUint32(o, buf.sampleRate, true); o+=4;
+    view.setUint32(o, buf.sampleRate*2, true); o+=4;
+    view.setUint16(o, buf.numberOfChannels*2, true); o+=2;
+    view.setUint16(o, 16, true); o+=2;
+    w("data"); view.setUint32(o, len-o-4, true); o+=4;
 
     for(let i=0;i<buf.length;i++){
         for(let c=0;c<buf.numberOfChannels;c++){
-            let s=Math.max(-1,Math.min(1,buf.getChannelData(c)[i]));
-            view.setInt16(o,s*0x7fff,true); o+=2;
+            let s = Math.max(-1, Math.min(1, buf.getChannelData(c)[i]));
+            view.setInt16(o, s * 0x7fff, true);
+            o+=2;
         }
     }
-    return new Blob([view],{type:"audio/wav"});
+    return new Blob([view], {type:"audio/wav"});
 }
 </script>
 
