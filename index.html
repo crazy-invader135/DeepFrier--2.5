@@ -2,21 +2,45 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>MP3 Auto Deepfryer</title>
+<title>MP3 Deepfryer</title>
 <style>
 body {
     background:#0e0e0e;
     color:#fff;
     font-family:Arial, sans-serif;
     text-align:center;
-    padding:20px;
+    padding:0;
+    margin:0;
 }
+
+/* Top bar */
+.topbar {
+    background:#1b1b1b;
+    display:flex;
+    justify-content:space-between;
+    padding:10px 20px;
+    position:sticky;
+    top:0;
+    z-index:1000;
+}
+.topbar a {
+    color:#fff;
+    text-decoration:none;
+    font-weight:bold;
+    padding:6px 12px;
+    border-radius:6px;
+    transition:0.2s;
+}
+.topbar a:hover { background:#333; }
+
+/* Main box */
 .box {
     background:#1b1b1b;
     padding:20px;
     border-radius:12px;
     display:inline-block;
-    width:420px;
+    width:500px;
+    margin-top:20px;
 }
 button {
     padding:12px;
@@ -29,7 +53,7 @@ button {
     font-weight:bold;
 }
 button:hover { background:#66bb6a; }
-input[type=range], input[type=number] { width:100%; }
+input[type=range], input[type=number], input[type=file] { width:100%; margin:6px 0; }
 hr { border:1px solid #333; }
 
 #progress-container {
@@ -52,6 +76,12 @@ hr { border:1px solid #333; }
 <script src="https://unpkg.com/lamejs@1.2.0/lame.min.js"></script>
 </head>
 <body>
+
+<!-- Top Bar -->
+<div class="topbar">
+    <a href="VisualDeepfryer.html">Visual Deepfryer</a>
+    <a href="Index.html">MP3 Deepfryer</a>
+</div>
 
 <h1>🎧 MP3 Auto Deepfryer (Batch)</h1>
 <p>Upload multiple files, AUTO settings apply</p>
