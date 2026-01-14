@@ -5,53 +5,70 @@
 <title>MP3 Deepfryer</title>
 <style>
     body {
-        background: #111;
+        background: #0e0e0e;
         color: #fff;
         font-family: Arial, sans-serif;
         text-align: center;
         padding: 20px;
     }
-    input, button {
-        margin: 10px;
-        padding: 8px;
-    }
-    .slider {
-        width: 300px;
-    }
     .box {
-        background: #1c1c1c;
+        background: #1b1b1b;
         padding: 20px;
-        border-radius: 10px;
+        border-radius: 12px;
         display: inline-block;
+        max-width: 420px;
+    }
+    button {
+        padding: 10px;
+        margin: 5px;
+        background: #ff4444;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        color: #fff;
+    }
+    button:hover {
+        background: #ff6666;
+    }
+    input[type=range] {
+        width: 100%;
+    }
+    .preset {
+        background: #333;
     }
 </style>
 </head>
 <body>
 
 <h1>🔥 MP3 Deepfryer 🔥</h1>
-<p>Destroy your audio quality on purpose</p>
+<p>Click a preset or tweak sliders</p>
 
 <div class="box">
-    <input type="file" id="fileInput" accept="audio/*"><br>
+    <input type="file" id="fileInput" accept="audio/*"><br><br>
 
-    <label>Sample Rate (Hz)</label><br>
-    <input type="range" min="4000" max="44100" value="8000" class="slider" id="sampleRate">
-    <span id="srVal">8000</span><br>
+    <b>Presets</b><br>
+    <button class="preset" onclick="setPreset('mild')">🙂 Mild Fry</button>
+    <button class="preset" onclick="setPreset('crunchy')">😈 Crunchy</button>
+    <button class="preset" onclick="setPreset('deep')">💀 Deepfried</button>
+    <button class="preset" onclick="setPreset('earrape')">👹 Earrape</button>
 
-    <label>Bit Depth</label><br>
-    <input type="range" min="2" max="16" value="4" class="slider" id="bitDepth">
-    <span id="bdVal">4</span><br>
+    <hr>
 
-    <label>Distortion</label><br>
-    <input type="range" min="0" max="100" value="30" class="slider" id="distortion">
-    <span id="distVal">30</span><br>
+    <label>Sample Rate: <span id="srVal"></span> Hz</label>
+    <input type="range" min="4000" max="44100" id="sampleRate">
 
-    <button onclick="processAudio()">Deepfry</button>
+    <label>Bit Depth: <span id="bdVal"></span></label>
+    <input type="range" min="2" max="16" id="bitDepth">
+
+    <label>Distortion: <span id="distVal"></span></label>
+    <input type="range" min="0" max="100" id="distortion">
+
+    <br><br>
+    <button onclick="processAudio()">🔥 Deepfry</button>
 </div>
 
 <br><br>
-<audio id="output" controls></audio>
-<br>
+<audio id="output" controls></audio><br>
 <a id="download" download="deepfried.wav">Download</a>
 
 <script>
@@ -59,48 +76,77 @@ const sr = document.getElementById("sampleRate");
 const bd = document.getElementById("bitDepth");
 const dist = document.getElementById("distortion");
 
-sr.oninput = () => srVal.textContent = sr.value;
-bd.oninput = () => bdVal.textContent = bd.value;
-dist.oninput = () => distVal.textContent = dist.value;
+function updateLabels() {
+    srVal.textContent = sr.value;
+    bdVal.textContent = bd.value;
+    distVal.textContent = dist.value;
+}
+
+[sr, bd, dist].forEach(sl => sl.oninput = updateLabels);
+
+function setPreset(p) {
+    if (p === "mild") {
+        sr.value = 22050;
+        bd.value = 10;
+        dist.value = 5;
+    }
+    if (p === "crunchy") {
+        sr.value = 11025;
+        bd.value = 6;
+        dist.value = 25;
+    }
+    if (p === "deep") {
+        sr.value = 8000;
+        bd.value = 4;
+        dist.value = 50;
+    }
+    if (p === "earrape") {
+        sr.value = 4000;
+        bd.value = 2;
+        dist.value = 100;
+    }
+    updateLabels();
+}
+
+setPreset("deep");
 
 async function processAudio() {
-    const file = document.getElementById("fileInput").files[0];
+    const file = fileInput.files[0];
     if (!file) return alert("Upload an audio file first!");
 
     const audioCtx = new AudioContext();
-    const arrayBuffer = await file.arrayBuffer();
-    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    const buffer = await audioCtx.decodeAudioData(await file.arrayBuffer());
 
-    const offlineCtx = new OfflineAudioContext(
-        audioBuffer.numberOfChannels,
-        audioBuffer.length,
+    const offline = new OfflineAudioContext(
+        buffer.numberOfChannels,
+        buffer.length,
         sr.value
     );
 
-    const source = offlineCtx.createBufferSource();
-    source.buffer = audioBuffer;
+    const source = offline.createBufferSource();
+    source.buffer = buffer;
 
-    const waveShaper = offlineCtx.createWaveShaper();
-    waveShaper.curve = makeDistortionCurve(dist.value);
+    const shaper = offline.createWaveShaper();
+    shaper.curve = makeDistortionCurve(dist.value);
 
-    source.connect(waveShaper);
-    waveShaper.connect(offlineCtx.destination);
+    source.connect(shaper);
+    shaper.connect(offline.destination);
     source.start();
 
-    const rendered = await offlineCtx.startRendering();
-    const reduced = bitCrush(rendered, bd.value);
+    const rendered = await offline.startRendering();
+    const crushed = bitCrush(rendered, bd.value);
 
-    const wavBlob = bufferToWave(reduced);
-    const url = URL.createObjectURL(wavBlob);
+    const blob = bufferToWave(crushed);
+    const url = URL.createObjectURL(blob);
 
     output.src = url;
     download.href = url;
 }
 
 function makeDistortionCurve(amount) {
-    const k = amount * 10;
     const n = 44100;
     const curve = new Float32Array(n);
+    const k = amount * 8;
     for (let i = 0; i < n; i++) {
         const x = (i * 2) / n - 1;
         curve[i] = Math.tanh(x * k);
@@ -124,16 +170,13 @@ function bufferToWave(buffer) {
     const view = new DataView(new ArrayBuffer(length));
     let offset = 0;
 
-    function writeString(s) {
-        for (let i = 0; i < s.length; i++) {
-            view.setUint8(offset++, s.charCodeAt(i));
-        }
+    function write(s) {
+        for (let i = 0; i < s.length; i++) view.setUint8(offset++, s.charCodeAt(i));
     }
 
-    writeString("RIFF");
+    write("RIFF");
     view.setUint32(offset, length - 8, true); offset += 4;
-    writeString("WAVE");
-    writeString("fmt ");
+    write("WAVEfmt ");
     view.setUint32(offset, 16, true); offset += 4;
     view.setUint16(offset, 1, true); offset += 2;
     view.setUint16(offset, buffer.numberOfChannels, true); offset += 2;
@@ -141,14 +184,14 @@ function bufferToWave(buffer) {
     view.setUint32(offset, buffer.sampleRate * 2, true); offset += 4;
     view.setUint16(offset, buffer.numberOfChannels * 2, true); offset += 2;
     view.setUint16(offset, 16, true); offset += 2;
-    writeString("data");
+    write("data");
     view.setUint32(offset, length - offset - 4, true); offset += 4;
 
     for (let i = 0; i < buffer.length; i++) {
         for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-            let sample = buffer.getChannelData(ch)[i];
-            sample = Math.max(-1, Math.min(1, sample));
-            view.setInt16(offset, sample * 0x7fff, true);
+            let s = buffer.getChannelData(ch)[i];
+            s = Math.max(-1, Math.min(1, s));
+            view.setInt16(offset, s * 0x7fff, true);
             offset += 2;
         }
     }
