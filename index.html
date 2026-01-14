@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>MP3 Auto Quality Reducer</title>
+<title>MP3 Auto Deepfryer (Batch)</title>
 <style>
 body {
     background:#0e0e0e;
@@ -29,19 +29,21 @@ button {
     font-weight:bold;
 }
 button:hover { background:#66bb6a; }
-input[type=range], input[type=number] {
-    width:100%;
-}
+input[type=range], input[type=number] { width:100%; }
 hr { border:1px solid #333; }
 </style>
+
+<!-- JSZip & LameJS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js"></script>
+<script src="https://unpkg.com/lamejs@1.2.0/lame.min.js"></script>
 </head>
 <body>
 
-<h1>🎧 MP3 Quality Reducer</h1>
-<p>AUTO mode with custom speed</p>
+<h1>🎧 MP3 Auto Deepfryer (Batch)</h1>
+<p>Upload multiple files, AUTO settings apply</p>
 
 <div class="box">
-<input type="file" id="fileInput" accept="audio/*"><br><br>
+<input type="file" id="fileInput" accept="audio/*" multiple><br><br>
 
 <button onclick="applyAuto()">⚙️ AUTO</button>
 
@@ -70,16 +72,15 @@ hr { border:1px solid #333; }
 <input type="range" min="0" max="100" id="distortion">
 
 <br><br>
-<button onclick="processAudio()">🎛️ Process Audio</button>
+<button onclick="processAll()">🎛️ Process All & Download</button>
 </div>
 
 <br><br>
 <audio id="output" controls></audio><br>
-<a id="download" download="processed.wav">Download</a>
+<a id="download">Download</a>
 
 <script>
 const sr = sampleRate, bd = bitDepth, dist = distortion, spd = speed;
-let lastURL = null;
 
 function updateLabels(){
     srVal.textContent = sr.value;
@@ -97,50 +98,90 @@ function applyAuto(){
 }
 applyAuto();
 
-async function processAudio(){
-    const file = fileInput.files[0];
-    if(!file) return alert("Upload an audio file first");
-    if(lastURL) URL.revokeObjectURL(lastURL);
+// -------------------- MP3 Conversion --------------------
+function bufferToMp3(audioBuffer, bitrate = 128){
+    const mp3encoder = new lamejs.Mp3Encoder(
+        audioBuffer.numberOfChannels,
+        audioBuffer.sampleRate,
+        bitrate
+    );
+    const samples = audioBuffer.getChannelData(0);
+    const mp3Data = [];
+    const sampleBlockSize = 1152;
 
-    let speedVal = parseFloat(spd.value);
-    if(isNaN(speedVal)) speedVal = 1;
-    speedVal = Math.min(25, Math.max(0.01, speedVal));
+    let i = 0;
+    while(i < samples.length){
+        const left = samples.subarray(i,i+sampleBlockSize);
+        const right = audioBuffer.numberOfChannels>1 
+            ? audioBuffer.getChannelData(1).subarray(i,i+sampleBlockSize)
+            : left;
 
+        const mp3buf = mp3encoder.encodeBuffer(floatTo16BitPCM(left), floatTo16BitPCM(right));
+        if(mp3buf.length>0) mp3Data.push(mp3buf);
+        i += sampleBlockSize;
+    }
+
+    const end = mp3encoder.flush();
+    if(end.length>0) mp3Data.push(end);
+
+    return new Blob(mp3Data,{type:"audio/mp3"});
+}
+
+function floatTo16BitPCM(float32){
+    const pcm16 = new Int16Array(float32.length);
+    for(let i=0;i<float32.length;i++){
+        pcm16[i] = Math.max(-1,Math.min(1,float32[i]))*0x7fff;
+    }
+    return pcm16;
+}
+
+function makeDistortionCurve(a){
+    const n=44100,curve=new Float32Array(n),k=a*8;
+    for(let i=0;i<n;i++){
+        const x=i*2/n-1;
+        curve[i]=Math.tanh(x*k);
+    }
+    return curve;
+}
+
+function bitCrush(buf,bits){
+    const step = Math.pow(0.5,bits);
+    for(let c=0;c<buf.numberOfChannels;c++){
+        const d = buf.getChannelData(c);
+        for(let i=0;i<d.length;i++)
+            d[i] = Math.round(d[i]/step)*step;
+    }
+}
+
+function getDistortedFileName(file){
+    const dot = file.name.lastIndexOf(".");
+    const base = dot !== -1 ? file.name.slice(0,dot) : file.name;
+    return base + " - Distorted.mp3";
+}
+
+// -------------------- Process Single File --------------------
+async function processFile(file){
     const ctx = new AudioContext();
     const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
 
-    const startVal = startTime.value.trim();
-    const endVal = endTime.value.trim();
+    const start = startTime.value.trim()==="" ? 0 : Math.max(0,parseFloat(startTime.value));
+    const end = endTime.value.trim()==="" ? buffer.duration : Math.min(buffer.duration,parseFloat(endTime.value));
 
-    const start = startVal === "" ? 0 : Math.max(0, parseFloat(startVal));
-    const end = endVal === "" ? buffer.duration : Math.min(buffer.duration, parseFloat(endVal));
+    if(end <= start) return null;
 
-    if(end <= start) return alert("End time must be greater than start time");
-
-    const startSample = Math.floor(start * buffer.sampleRate);
-    const endSample = Math.floor(end * buffer.sampleRate);
+    const startSample = Math.floor(start*buffer.sampleRate);
+    const endSample = Math.floor(end*buffer.sampleRate);
     const length = endSample - startSample;
 
-    const trimmed = ctx.createBuffer(
-        buffer.numberOfChannels,
-        length,
-        buffer.sampleRate
-    );
-
-    for(let ch=0; ch<buffer.numberOfChannels; ch++){
-        trimmed.getChannelData(ch).set(
-            buffer.getChannelData(ch).slice(startSample, endSample)
-        );
+    const trimmed = ctx.createBuffer(buffer.numberOfChannels,length,buffer.sampleRate);
+    for(let ch=0;ch<buffer.numberOfChannels;ch++){
+        trimmed.getChannelData(ch).set(buffer.getChannelData(ch).slice(startSample,endSample));
     }
 
-    const outLength = Math.floor((length / speedVal) * (sr.value / buffer.sampleRate));
+    const speedVal = Math.min(25,Math.max(0.01,parseFloat(spd.value)||1));
+    const outLength = Math.floor((length/speedVal)*(sr.value/buffer.sampleRate));
 
-    const offline = new OfflineAudioContext(
-        trimmed.numberOfChannels,
-        outLength,
-        sr.value
-    );
-
+    const offline = new OfflineAudioContext(trimmed.numberOfChannels,outLength,sr.value);
     const src = offline.createBufferSource();
     src.buffer = trimmed;
     src.playbackRate.value = speedVal;
@@ -153,57 +194,39 @@ async function processAudio(){
     src.start();
 
     const rendered = await offline.startRendering();
-    bitCrush(rendered, bd.value);
+    bitCrush(rendered,bd.value);
 
-    const blob = bufferToWave(rendered);
-    lastURL = URL.createObjectURL(blob);
-
-    output.src = lastURL;
-    download.href = lastURL;
+    return bufferToMp3(rendered,128);
 }
 
-function makeDistortionCurve(a){
-    const n = 44100, curve = new Float32Array(n), k = a * 8;
-    for(let i=0;i<n;i++){
-        const x = i * 2 / n - 1;
-        curve[i] = Math.tanh(x * k);
+// -------------------- Process All Files --------------------
+async function processAll(){
+    const files = fileInput.files;
+    if(!files.length) return alert("Upload at least one file");
+
+    // Single file → direct download
+    if(files.length === 1){
+        const blob = await processFile(files[0]);
+        if(!blob) return alert("Error processing file");
+        const url = URL.createObjectURL(blob);
+        download.href = url;
+        download.download = getDistortedFileName(files[0]);
+        download.click();
+        return;
     }
-    return curve;
-}
 
-function bitCrush(buf,bits){
-    const step = Math.pow(0.5, bits);
-    for(let c=0;c<buf.numberOfChannels;c++){
-        const d = buf.getChannelData(c);
-        for(let i=0;i<d.length;i++)
-            d[i] = Math.round(d[i] / step) * step;
+    // Multiple files → ZIP
+    const zip = new JSZip();
+    for(let i=0;i<files.length;i++){
+        const blob = await processFile(files[i]);
+        if(blob) zip.file(getDistortedFileName(files[i]), blob);
     }
-}
 
-function bufferToWave(buf){
-    const len = buf.length * buf.numberOfChannels * 2 + 44;
-    const view = new DataView(new ArrayBuffer(len));
-    let o = 0;
-    const w = s => { for(let i=0;i<s.length;i++) view.setUint8(o++, s.charCodeAt(i)); };
-
-    w("RIFF"); view.setUint32(o, len-8, true); o+=4;
-    w("WAVEfmt "); view.setUint32(o, 16, true); o+=4;
-    view.setUint16(o, 1, true); o+=2;
-    view.setUint16(o, buf.numberOfChannels, true); o+=2;
-    view.setUint32(o, buf.sampleRate, true); o+=4;
-    view.setUint32(o, buf.sampleRate*2, true); o+=4;
-    view.setUint16(o, buf.numberOfChannels*2, true); o+=2;
-    view.setUint16(o, 16, true); o+=2;
-    w("data"); view.setUint32(o, len-o-4, true); o+=4;
-
-    for(let i=0;i<buf.length;i++){
-        for(let c=0;c<buf.numberOfChannels;c++){
-            let s = Math.max(-1, Math.min(1, buf.getChannelData(c)[i]));
-            view.setInt16(o, s * 0x7fff, true);
-            o+=2;
-        }
-    }
-    return new Blob([view], {type:"audio/wav"});
+    const content = await zip.generateAsync({type:"blob"});
+    const url = URL.createObjectURL(content);
+    download.href = url;
+    download.download = "Distorted_Audio.zip";
+    download.click();
 }
 </script>
 
