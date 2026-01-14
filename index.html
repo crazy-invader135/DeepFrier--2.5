@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>MP3 Deepfryer</title>
+<title>MP3 Auto Deepfryer</title>
 <style>
 body {
     background:#0e0e0e;
     color:#fff;
-    font-family:Arial;
+    font-family:Arial, sans-serif;
     text-align:center;
     padding:20px;
 }
@@ -19,32 +19,29 @@ body {
     width:420px;
 }
 button {
-    padding:10px;
-    margin:4px;
-    background:#ff4444;
+    padding:12px;
+    margin:6px;
+    background:#4caf50;
     border:none;
     border-radius:6px;
     cursor:pointer;
     color:#fff;
+    font-weight:bold;
 }
-button:hover { background:#ff6666; }
+button:hover { background:#66bb6a; }
 input[type=range], input[type=number] { width:100%; }
-.preset { background:#333; }
+hr { border:1px solid #333; }
 </style>
 </head>
 <body>
 
-<h1>🔥 MP3 Deepfryer 🔥</h1>
-<p>Presets + Trim + No Length Bugs</p>
+<h1>🎧 MP3 Quality Reducer</h1>
+<p>AUTO mode — no thinking required</p>
 
 <div class="box">
 <input type="file" id="fileInput" accept="audio/*"><br><br>
 
-<b>Presets</b><br>
-<button class="preset" onclick="setPreset('mild')">🙂 Mild</button>
-<button class="preset" onclick="setPreset('crunchy')">😈 Crunchy</button>
-<button class="preset" onclick="setPreset('deep')">💀 Deepfried</button>
-<button class="preset" onclick="setPreset('earrape')">👹 Earrape</button>
+<button onclick="applyAuto()">⚙️ AUTO</button>
 
 <hr>
 
@@ -66,36 +63,37 @@ input[type=range], input[type=number] { width:100%; }
 <input type="range" min="0" max="100" id="distortion">
 
 <br><br>
-<button onclick="processAudio()">🔥 Deepfry</button>
+<button onclick="processAudio()">🎛️ Process Audio</button>
 </div>
 
 <br><br>
 <audio id="output" controls></audio><br>
-<a id="download" download="deepfried.wav">Download</a>
+<a id="download" download="processed.wav">Download</a>
 
 <script>
 const sr = sampleRate, bd = bitDepth, dist = distortion;
 let lastURL = null;
 
-function updateLabels() {
+function updateLabels(){
     srVal.textContent = sr.value;
     bdVal.textContent = bd.value;
     distVal.textContent = dist.value;
 }
 [sr,bd,dist].forEach(x => x.oninput = updateLabels);
 
-function setPreset(p){
-    if(p==="mild"){ sr.value=22050; bd.value=10; dist.value=5; }
-    if(p==="crunchy"){ sr.value=11025; bd.value=6; dist.value=25; }
-    if(p==="deep"){ sr.value=8000; bd.value=4; dist.value=50; }
-    if(p==="earrape"){ sr.value=4000; bd.value=2; dist.value=100; }
+function applyAuto(){
+    // Mild preset, renamed to AUTO
+    sr.value = 22050;
+    bd.value = 10;
+    dist.value = 5;
     updateLabels();
 }
-setPreset("deep");
+
+applyAuto();
 
 async function processAudio(){
     const file = fileInput.files[0];
-    if(!file) return alert("Upload audio first");
+    if(!file) return alert("Upload an audio file first");
 
     if(lastURL) URL.revokeObjectURL(lastURL);
 
