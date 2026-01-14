@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Visual Deepfryer</title>
+<title>Visual Deepfryer (Full Video)</title>
 <style>
 body {
     background:#0e0e0e;
@@ -12,8 +12,6 @@ body {
     padding:0;
     margin:0;
 }
-
-/* Top bar */
 .topbar {
     background:#1b1b1b;
     display:flex;
@@ -33,7 +31,6 @@ body {
 }
 .topbar a:hover { background:#333; }
 
-/* Main box */
 .box {
     background:#1b1b1b;
     padding:20px;
@@ -54,23 +51,23 @@ button {
 }
 button:hover { background:#ff7043; }
 input[type=range], input[type=file] { width:100%; margin:6px 0; }
-canvas, video { max-width:100%; border-radius:12px; margin-top:10px; }
+#progress-container { width:100%; background:#333; border-radius:6px; margin-top:10px; }
+#progress-bar { height:20px; width:0%; background:#4caf50; border-radius:6px; }
+#progress-text { margin-top:6px; font-size:14px; }
 </style>
 </head>
 <body>
 
-<!-- Top Bar -->
 <div class="topbar">
     <a href="VisualDeepfryer.html">Visual Deepfryer</a>
     <a href="Index.html">MP3 Deepfryer</a>
 </div>
 
-<h1>🎨 Visual Deepfryer</h1>
-<p>Images & MP4 videos (sound removed)</p>
+<h1>🎨 Visual Deepfryer (Full Video)</h1>
+<p>Upload MP4 videos — audio muted, red boost & intensity applied</p>
 
 <div class="box">
-<h3>Upload Image or Video</h3>
-<input type="file" id="fileInput" accept="image/*,video/mp4"><br>
+<input type="file" id="fileInput" accept="video/mp4"><br>
 
 <label>Intensity (0-100)</label>
 <input type="range" id="intensity" min="0" max="100" value="50"><br>
@@ -78,163 +75,65 @@ canvas, video { max-width:100%; border-radius:12px; margin-top:10px; }
 <label>Red Boost (0-100)</label>
 <input type="range" id="redBoost" min="0" max="100" value="0"><br>
 
-<button onclick="processFile()">Deepfry!</button>
+<button onclick="processVideo()">Deepfry & Download</button>
 
-<canvas id="canvas"></canvas>
-<video id="video" controls muted style="display:none;"></video><br>
+<div id="progress-container">
+    <div id="progress-bar"></div>
+</div>
+<div id="progress-text"></div>
+
 <a id="download">Download</a>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.8/dist/ffmpeg.min.js"></script>
 <script>
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const videoEl = document.getElementById("video");
+const { createFFmpeg, fetchFile } = FFmpeg;
+const ffmpeg = createFFmpeg({ log: true });
+const progressBar = document.getElementById("progress-bar");
+const progressText = document.getElementById("progress-text");
 
-function deepfryImage(img, intensity=50, redBoost=0){
-    canvas.width = img.width;
-    canvas.height = img.height;
-    ctx.drawImage(img,0,0);
-
-    let imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-    let data = imageData.data;
-
-    const contrast = 1 + intensity/50;
-    const saturation = 1 + intensity/70;
-
-    for(let i=0;i<data.length;i+=4){
-        let r = data[i];
-        let g = data[i+1];
-        let b = data[i+2];
-
-        // Increase contrast
-        r = ((r/255-0.5)*contrast+0.5)*255;
-        g = ((g/255-0.5)*contrast+0.5)*255;
-        b = ((b/255-0.5)*contrast+0.5)*255;
-
-        // Increase saturation
-        let avg = (r+g+b)/3;
-        r = avg + (r-avg)*saturation;
-        g = avg + (g-avg)*saturation;
-        b = avg + (b-avg)*saturation;
-
-        // Random noise
-        const noise = (Math.random()-0.5)*intensity*2;
-        r = Math.min(255,Math.max(0,r+noise));
-        g = Math.min(255,Math.max(0,g+noise));
-        b = Math.min(255,Math.max(0,b+noise));
-
-        // Apply red boost
-        r = Math.min(255,r + (redBoost/100)*255);
-
-        data[i] = r;
-        data[i+1] = g;
-        data[i+2] = b;
-    }
-
-    ctx.putImageData(imageData,0,0);
-}
-
-function downloadCanvas(filename="deepfried.png"){
-    const url = canvas.toDataURL("image/png");
-    const a = document.getElementById("download");
-    a.href = url;
-    a.download = filename;
-    a.click();
-}
-
-function processFile(){
+async function processVideo(){
     const file = document.getElementById("fileInput").files[0];
+    if(!file) return alert("Upload a video first");
+
     const intensity = parseInt(document.getElementById("intensity").value);
     const redBoost = parseInt(document.getElementById("redBoost").value);
 
-    if(!file) return alert("Upload a file first");
+    progressText.textContent = "Loading FFmpeg...";
+    if(!ffmpeg.isLoaded()) await ffmpeg.load();
 
-    const url = URL.createObjectURL(file);
+    const inputName = "input.mp4";
+    const outputName = file.name.split('.')[0]+" - Deepfried.mp4";
 
-    if(file.type.startsWith("image")){
-        videoEl.style.display = "none";
-        canvas.style.display = "block";
+    ffmpeg.FS('writeFile', inputName, await fetchFile(file));
 
-        const img = new Image();
-        img.onload = ()=> deepfryImage(img,intensity,redBoost);
-        img.src = url;
+    // Build filter for deepfrying
+    // 1. eq=contrast & saturation (intensity)
+    // 2. colorchannelmixer= increase red
+    const contrast = 1 + intensity/100;
+    const saturation = 1 + intensity/100;
+    const redFactor = 1 + redBoost/100;
 
-        document.getElementById("download").onclick = ()=> downloadCanvas(file.name.split('.')[0]+" - Deepfried.png");
+    const filter = `eq=contrast=${contrast}:saturation=${saturation},colorchannelmixer=rr=${redFactor}:gg=1:bb=1`;
 
-    } else if(file.type === "video/mp4"){
-        canvas.style.display = "none";
-        videoEl.style.display = "block";
-        videoEl.src = url;
-        videoEl.muted = true; // always muted
-        videoEl.play();
+    progressText.textContent = "Processing video... (this may take a while)";
+    ffmpeg.setProgress(({ ratio })=>{
+        progressBar.style.width = `${Math.floor(ratio*100)}%`;
+        progressText.textContent = `Processing video... ${Math.floor(ratio*100)}%`;
+    });
 
-        const offCanvas = document.createElement("canvas");
-        const offCtx = offCanvas.getContext("2d");
-        offCanvas.width = videoEl.videoWidth || 640;
-        offCanvas.height = videoEl.videoHeight || 360;
+    await ffmpeg.run("-i", inputName, "-vf", filter, "-an", "-c:v", "libx264", "-preset", "fast", outputName);
 
-        const stream = offCanvas.captureStream();
-        const recorder = new MediaRecorder(stream, { mimeType: "video/webm" });
-        const chunks = [];
-        recorder.ondataavailable = e => chunks.push(e.data);
-        recorder.onstop = ()=> {
-            const blob = new Blob(chunks,{type:"video/webm"});
-            const a = document.getElementById("download");
-            a.href = URL.createObjectURL(blob);
-            a.download = file.name.split('.')[0]+" - Deepfried.webm";
-            a.click();
-        };
-        recorder.start();
+    const data = ffmpeg.FS('readFile', outputName);
+    const url = URL.createObjectURL(new Blob([data.buffer], { type: "video/mp4" }));
+    const a = document.getElementById("download");
+    a.href = url;
+    a.download = outputName;
+    a.click();
 
-        videoEl.onplay = ()=>{
-            function drawFrame(){
-                if(videoEl.paused || videoEl.ended){
-                    recorder.stop();
-                    return;
-                }
-                offCtx.drawImage(videoEl,0,0,offCanvas.width,offCanvas.height);
-                // Deepfry frame
-                let frame = offCtx.getImageData(0,0,offCanvas.width,offCanvas.height);
-                let data = frame.data;
-
-                const contrast = 1 + intensity/50;
-                const saturation = 1 + intensity/70;
-
-                for(let i=0;i<data.length;i+=4){
-                    let r = data[i], g = data[i+1], b = data[i+2];
-                    let avg = (r+g+b)/3;
-                    r = ((r/255-0.5)*contrast+0.5)*255; 
-                    g = ((g/255-0.5)*contrast+0.5)*255;
-                    b = ((b/255-0.5)*contrast+0.5)*255;
-
-                    // Saturation
-                    r = avg + (r-avg)*saturation;
-                    g = avg + (g-avg)*saturation;
-                    b = avg + (b-avg)*saturation;
-
-                    // Noise
-                    const noise = (Math.random()-0.5)*intensity*2;
-                    r = Math.min(255,Math.max(0,r+noise));
-                    g = Math.min(255,Math.max(0,g+noise));
-                    b = Math.min(255,Math.max(0,b+noise));
-
-                    // Red boost
-                    r = Math.min(255,r + (redBoost/100)*255);
-
-                    data[i] = r;
-                    data[i+1] = g;
-                    data[i+2] = b;
-                }
-                offCtx.putImageData(frame,0,0);
-                requestAnimationFrame(drawFrame);
-            }
-            drawFrame();
-        };
-    } else {
-        alert("Unsupported file type");
-    }
+    progressText.textContent = "Done!";
+    progressBar.style.width = "100%";
 }
 </script>
-
 </body>
 </html>
