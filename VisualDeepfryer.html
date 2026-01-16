@@ -2,138 +2,187 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Visual Deepfryer (Full Video)</title>
+<title>Visual Deepfryer</title>
+
 <style>
 body {
-    background:#0e0e0e;
-    color:#fff;
-    font-family:Arial, sans-serif;
-    text-align:center;
-    padding:0;
-    margin:0;
+    margin: 0;
+    background: #0e0e0e;
+    color: #fff;
+    font-family: Arial, sans-serif;
+    text-align: center;
 }
+
 .topbar {
-    background:#1b1b1b;
-    display:flex;
-    justify-content:space-between;
-    padding:10px 20px;
-    position:sticky;
-    top:0;
-    z-index:1000;
+    background: #1b1b1b;
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 20px;
+    position: sticky;
+    top: 0;
 }
+
 .topbar a {
-    color:#fff;
-    text-decoration:none;
-    font-weight:bold;
-    padding:6px 12px;
-    border-radius:6px;
-    transition:0.2s;
+    color: #fff;
+    text-decoration: none;
+    font-weight: bold;
+    padding: 6px 12px;
+    border-radius: 6px;
 }
-.topbar a:hover { background:#333; }
+
+.topbar a:hover {
+    background: #333;
+}
 
 .box {
-    background:#1b1b1b;
-    padding:20px;
-    border-radius:12px;
-    display:inline-block;
-    width:500px;
-    margin-top:20px;
+    background: #1b1b1b;
+    padding: 20px;
+    border-radius: 12px;
+    width: 500px;
+    margin: 30px auto;
 }
+
 button {
-    padding:12px;
-    margin:6px;
-    background:#ff5722;
-    border:none;
-    border-radius:6px;
-    cursor:pointer;
-    color:#fff;
-    font-weight:bold;
+    padding: 12px;
+    margin-top: 10px;
+    width: 100%;
+    background: #ff5722;
+    border: none;
+    border-radius: 6px;
+    color: #fff;
+    font-weight: bold;
+    cursor: pointer;
 }
-button:hover { background:#ff7043; }
-input[type=range], input[type=file] { width:100%; margin:6px 0; }
-#progress-container { width:100%; background:#333; border-radius:6px; margin-top:10px; }
-#progress-bar { height:20px; width:0%; background:#4caf50; border-radius:6px; }
-#progress-text { margin-top:6px; font-size:14px; }
+
+button:hover {
+    background: #ff7043;
+}
+
+input[type=file], input[type=range] {
+    width: 100%;
+    margin: 6px 0;
+}
+
+#progress-container {
+    background: #333;
+    border-radius: 6px;
+    margin-top: 10px;
+    height: 20px;
+}
+
+#progress-bar {
+    background: #4caf50;
+    height: 100%;
+    width: 0%;
+    border-radius: 6px;
+}
+
+#progress-text {
+    margin-top: 6px;
+    font-size: 14px;
+}
 </style>
 </head>
 <body>
 
+<!-- TOP BAR -->
 <div class="topbar">
     <a href="VisualDeepfryer.html">Visual Deepfryer</a>
-    <a href="index.html">MP3 Deepfryer</a>
+    <a href="Index.html">MP3 Deepfryer</a>
 </div>
 
-<h1>🎨 Visual Deepfryer (Full Video)</h1>
-<p>Upload MP4 videos — audio muted, red boost & intensity applied</p>
+<h1>🎨 Visual Deepfryer</h1>
+<p>Full MP4 deepfrying • No audio • Browser-based</p>
 
 <div class="box">
-<input type="file" id="fileInput" accept="video/mp4"><br>
+    <input type="file" id="fileInput" accept="video/mp4">
 
-<label>Intensity (0-100)</label>
-<input type="range" id="intensity" min="0" max="100" value="50"><br>
+    <label>Intensity (0–100)</label>
+    <input type="range" id="intensity" min="0" max="100" value="50">
 
-<label>Red Boost (0-100)</label>
-<input type="range" id="redBoost" min="0" max="100" value="0"><br>
+    <label>Red Boost (0–100)</label>
+    <input type="range" id="redBoost" min="0" max="100" value="0">
 
-<button onclick="processVideo()">Deepfry & Download</button>
+    <button onclick="processVideo()">Deepfry & Download</button>
 
-<div id="progress-container">
-    <div id="progress-bar"></div>
-</div>
-<div id="progress-text"></div>
-
-<a id="download">Download</a>
+    <div id="progress-container">
+        <div id="progress-bar"></div>
+    </div>
+    <div id="progress-text"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.8/dist/ffmpeg.min.js"></script>
+<a id="download"></a>
+
+<!-- FFmpeg WASM -->
+<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.6/dist/ffmpeg.min.js"></script>
+
 <script>
-const { createFFmpeg, fetchFile } = FFmpeg;
-const ffmpeg = createFFmpeg({ log: true });
+const { FFmpeg } = FFmpegWASM;
+const ffmpeg = new FFmpeg();
+
 const progressBar = document.getElementById("progress-bar");
 const progressText = document.getElementById("progress-text");
 
-async function processVideo(){
+async function loadFFmpeg() {
+    if (ffmpeg.loaded) return;
+
+    progressText.textContent = "Loading FFmpeg (first time only)...";
+
+    await ffmpeg.load({
+        coreURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js",
+        wasmURL: "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.wasm"
+    });
+}
+
+async function processVideo() {
     const file = document.getElementById("fileInput").files[0];
-    if(!file) return alert("Upload a video first");
+    if (!file) return alert("Please upload an MP4");
+
+    await loadFFmpeg();
+
+    progressText.textContent = "Preparing video...";
+    progressBar.style.width = "5%";
+
+    await ffmpeg.writeFile("input.mp4", await file.arrayBuffer());
 
     const intensity = parseInt(document.getElementById("intensity").value);
     const redBoost = parseInt(document.getElementById("redBoost").value);
 
-    progressText.textContent = "Loading FFmpeg...";
-    if(!ffmpeg.isLoaded()) await ffmpeg.load();
+    const contrast = 1 + intensity / 100;
+    const saturation = 1 + intensity / 100;
+    const red = 1 + redBoost / 100;
 
-    const inputName = "input.mp4";
-    const outputName = file.name.split('.')[0]+" - Deepfried.mp4";
+    const filter =
+        `eq=contrast=${contrast}:saturation=${saturation},` +
+        `colorchannelmixer=rr=${red}:gg=1:bb=1`;
 
-    ffmpeg.FS('writeFile', inputName, await fetchFile(file));
+    progressText.textContent = "Processing video… (do not close tab)";
+    progressBar.style.width = "25%";
 
-    // Build filter for deepfrying
-    // 1. eq=contrast & saturation (intensity)
-    // 2. colorchannelmixer= increase red
-    const contrast = 1 + intensity/100;
-    const saturation = 1 + intensity/100;
-    const redFactor = 1 + redBoost/100;
+    await ffmpeg.exec([
+        "-i", "input.mp4",
+        "-vf", filter,
+        "-an",
+        "-movflags", "faststart",
+        "output.mp4"
+    ]);
 
-    const filter = `eq=contrast=${contrast}:saturation=${saturation},colorchannelmixer=rr=${redFactor}:gg=1:bb=1`;
+    progressBar.style.width = "90%";
+    progressText.textContent = "Finalizing download...";
 
-    progressText.textContent = "Processing video... (this may take a while)";
-    ffmpeg.setProgress(({ ratio })=>{
-        progressBar.style.width = `${Math.floor(ratio*100)}%`;
-        progressText.textContent = `Processing video... ${Math.floor(ratio*100)}%`;
-    });
+    const data = await ffmpeg.readFile("output.mp4");
+    const blob = new Blob([data.buffer], { type: "video/mp4" });
 
-    await ffmpeg.run("-i", inputName, "-vf", filter, "-an", "-c:v", "libx264", "-preset", "fast", outputName);
-
-    const data = ffmpeg.FS('readFile', outputName);
-    const url = URL.createObjectURL(new Blob([data.buffer], { type: "video/mp4" }));
+    const url = URL.createObjectURL(blob);
     const a = document.getElementById("download");
     a.href = url;
-    a.download = outputName;
+    a.download = file.name.replace(".mp4", " - Deepfried.mp4");
     a.click();
 
-    progressText.textContent = "Done!";
     progressBar.style.width = "100%";
+    progressText.textContent = "Done!";
 }
 </script>
+
 </body>
 </html>
