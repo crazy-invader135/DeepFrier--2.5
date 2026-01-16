@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Visual Deepfryer</title>
+<title>MP3 Deepfryer</title>
 <style>
 body {
     background:#0e0e0e;
@@ -12,6 +12,8 @@ body {
     padding:0;
     margin:0;
 }
+
+/* Top bar */
 .topbar {
     background:#1b1b1b;
     display:flex;
@@ -31,6 +33,7 @@ body {
 }
 .topbar a:hover { background:#333; }
 
+/* Main box */
 .box {
     background:#1b1b1b;
     padding:20px;
@@ -42,184 +45,251 @@ body {
 button {
     padding:12px;
     margin:6px;
-    background:#ff5722;
+    background:#4caf50;
     border:none;
     border-radius:6px;
     cursor:pointer;
     color:#fff;
     font-weight:bold;
 }
-button:hover { background:#ff7043; }
-input[type=range], input[type=file] { width:100%; margin:6px 0; }
-canvas, video { max-width:100%; border-radius:12px; margin-top:10px; }
+button:hover { background:#66bb6a; }
+input[type=range], input[type=number], input[type=file] { width:100%; margin:6px 0; }
+hr { border:1px solid #333; }
+
+#progress-container {
+    width:100%;
+    background:#333;
+    border-radius:6px;
+    margin-top:10px;
+}
+#progress-bar {
+    height:20px;
+    width:0%;
+    background:#4caf50;
+    border-radius:6px;
+}
+#progress-text { margin-top:6px; font-size:14px; }
 </style>
+
+<!-- JSZip & LameJS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js"></script>
+<script src="https://unpkg.com/lamejs@1.2.0/lame.min.js"></script>
 </head>
 <body>
 
+<!-- Top Bar -->
 <div class="topbar">
     <a href="VisualDeepfryer.html">Visual Deepfryer</a>
     <a href="Index.html">MP3 Deepfryer</a>
 </div>
 
-<h1>🎨 Visual Deepfryer</h1>
-<p>Images & MP4 videos (sound removed)</p>
+<h1>🎧 MP3 Auto Deepfryer (Batch)</h1>
+<p>Upload multiple files, AUTO settings apply</p>
 
 <div class="box">
-<h3>Upload Image or Video</h3>
-<input type="file" id="fileInput" accept="image/*,video/mp4"><br>
+<input type="file" id="fileInput" accept="audio/*" multiple><br><br>
 
-<label>Intensity (0-100)</label>
-<input type="range" id="intensity" min="0" max="100" value="50"><br>
+<button onclick="applyAuto()">⚙️ AUTO</button>
 
-<label>Red Boost (0-100)</label>
-<input type="range" id="redBoost" min="0" max="100" value="0"><br>
+<hr>
 
-<button onclick="processFile()">Deepfry!</button>
+<label>Start Time (seconds — optional)</label>
+<input type="number" id="startTime" placeholder="0">
 
-<canvas id="canvas"></canvas>
-<video id="video" controls muted style="display:none;"></video><br>
-<a id="download">Download</a>
+<label>End Time (seconds — optional)</label>
+<input type="number" id="endTime" placeholder="Full length">
+
+<hr>
+
+<label>Speed (0.01 – 25×)</label>
+<input type="number" id="speed" value="1" min="0.01" max="25" step="any">
+
+<hr>
+
+<label>Sample Rate: <span id="srVal"></span> Hz</label>
+<input type="range" min="4000" max="44100" id="sampleRate">
+
+<label>Bit Depth: <span id="bdVal"></span></label>
+<input type="range" min="2" max="16" id="bitDepth">
+
+<label>Distortion: <span id="distVal"></span></label>
+<input type="range" min="0" max="100" id="distortion">
+
+<br><br>
+<button onclick="processAll()">🎛️ Process All & Download</button>
+
+<div id="progress-container">
+    <div id="progress-bar"></div>
+</div>
+<div id="progress-text"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/gh/antimatter15/whammy/whammy.js"></script>
+<br><br>
+<audio id="output" controls></audio><br>
+<a id="download">Download</a>
+
 <script>
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const videoEl = document.getElementById("video");
+const sr = sampleRate, bd = bitDepth, dist = distortion, spd = speed;
 
-// ------------------ IMAGE DEEPFRY ------------------
-function deepfryImage(img, intensity=50, redBoost=0){
-    canvas.width = img.width;
-    canvas.height = img.height;
-    ctx.drawImage(img,0,0);
-
-    let imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-    let data = imageData.data;
-
-    const contrast = 1 + intensity/50;
-    const saturation = 1 + intensity/70;
-
-    for(let i=0;i<data.length;i+=4){
-        let r = data[i], g = data[i+1], b = data[i+2];
-        let avg = (r+g+b)/3;
-
-        // Contrast
-        r = ((r/255-0.5)*contrast+0.5)*255;
-        g = ((g/255-0.5)*contrast+0.5)*255;
-        b = ((b/255-0.5)*contrast+0.5)*255;
-
-        // Saturation
-        r = avg + (r-avg)*saturation;
-        g = avg + (g-avg)*saturation;
-        b = avg + (b-avg)*saturation;
-
-        // Noise
-        const noise = (Math.random()-0.5)*intensity*2;
-        r = Math.min(255,Math.max(0,r+noise));
-        g = Math.min(255,Math.max(0,g+noise));
-        b = Math.min(255,Math.max(0,b+noise));
-
-        // Red boost
-        r = Math.min(255,r + (redBoost/100)*255);
-
-        data[i] = r;
-        data[i+1] = g;
-        data[i+2] = b;
-    }
-    ctx.putImageData(imageData,0,0);
+function updateLabels(){
+    srVal.textContent = sr.value;
+    bdVal.textContent = bd.value;
+    distVal.textContent = dist.value;
 }
+[sr,bd,dist].forEach(x => x.oninput = updateLabels);
 
-function downloadCanvas(filename="deepfried.png"){
-    const url = canvas.toDataURL("image/png");
-    const a = document.getElementById("download");
-    a.href = url;
-    a.download = filename;
-    a.click();
+function applyAuto(){
+    sr.value = 22050;
+    bd.value = 10;
+    dist.value = 5;
+    spd.value = 1;
+    updateLabels();
 }
+applyAuto();
 
-// ------------------ VIDEO DEEPFRY ------------------
-async function deepfryVideo(file, intensity=50, redBoost=0){
-    const url = URL.createObjectURL(file);
-    videoEl.src = url;
-    videoEl.muted = true;
-    videoEl.style.display = "block";
-    canvas.style.display = "none";
+// -------------------- MP3 Conversion --------------------
+function bufferToMp3(audioBuffer, bitrate = 128){
+    const mp3encoder = new lamejs.Mp3Encoder(
+        audioBuffer.numberOfChannels,
+        audioBuffer.sampleRate,
+        bitrate
+    );
+    const samples = audioBuffer.getChannelData(0);
+    const mp3Data = [];
+    const sampleBlockSize = 1152;
 
-    await new Promise(resolve => {
-        videoEl.onloadedmetadata = resolve;
-    });
+    let i = 0;
+    while(i < samples.length){
+        const left = samples.subarray(i,i+sampleBlockSize);
+        const right = audioBuffer.numberOfChannels>1 
+            ? audioBuffer.getChannelData(1).subarray(i,i+sampleBlockSize)
+            : left;
 
-    const whammyVideo = new Whammy.Video(videoEl.playbackRate || 1);
-
-    const offCanvas = document.createElement("canvas");
-    offCanvas.width = videoEl.videoWidth;
-    offCanvas.height = videoEl.videoHeight;
-    const offCtx = offCanvas.getContext("2d");
-
-    const totalFrames = Math.floor(videoEl.duration*30); // 30 fps
-    for(let i=0;i<totalFrames;i++){
-        videoEl.currentTime = i/30;
-        await new Promise(r => videoEl.onseeked = r);
-
-        offCtx.drawImage(videoEl,0,0,offCanvas.width,offCanvas.height);
-
-        let frame = offCtx.getImageData(0,0,offCanvas.width,offCanvas.height);
-        let data = frame.data;
-        const contrast = 1 + intensity/50;
-        const saturation = 1 + intensity/70;
-
-        for(let j=0;j<data.length;j+=4){
-            let r=data[j], g=data[j+1], b=data[j+2];
-            let avg = (r+g+b)/3;
-            r = ((r/255-0.5)*contrast+0.5)*255;
-            g = ((g/255-0.5)*contrast+0.5)*255;
-            b = ((b/255-0.5)*contrast+0.5)*255;
-
-            r = avg + (r-avg)*saturation;
-            g = avg + (g-avg)*saturation;
-            b = avg + (b-avg)*saturation;
-
-            const noise = (Math.random()-0.5)*intensity*2;
-            r = Math.min(255,Math.max(0,r+noise));
-            g = Math.min(255,Math.max(0,g+noise));
-            b = Math.min(255,Math.max(0,b+noise));
-
-            r = Math.min(255,r + (redBoost/100)*255);
-
-            data[j]=r; data[j+1]=g; data[j+2]=b;
-        }
-        offCtx.putImageData(frame,0,0);
-        whammyVideo.add(offCanvas);
+        const mp3buf = mp3encoder.encodeBuffer(floatTo16BitPCM(left), floatTo16BitPCM(right));
+        if(mp3buf.length>0) mp3Data.push(mp3buf);
+        i += sampleBlockSize;
     }
 
-    const outputBlob = whammyVideo.compile();
-    const a = document.getElementById("download");
-    a.href = URL.createObjectURL(outputBlob);
-    a.download = file.name.split(".")[0]+" - Deepfried.webm";
-    a.click();
+    const end = mp3encoder.flush();
+    if(end.length>0) mp3Data.push(end);
+
+    return new Blob(mp3Data,{type:"audio/mp3"});
 }
 
-// ------------------ PROCESS FILE ------------------
-function processFile(){
-    const file = document.getElementById("fileInput").files[0];
-    if(!file) return alert("Upload a file first");
-
-    const intensity = parseInt(document.getElementById("intensity").value);
-    const redBoost = parseInt(document.getElementById("redBoost").value);
-
-    if(file.type.startsWith("image")){
-        videoEl.style.display="none";
-        canvas.style.display="block";
-        const img = new Image();
-        img.onload = ()=> deepfryImage(img,intensity,redBoost);
-        img.src = URL.createObjectURL(file);
-        document.getElementById("download").onclick = ()=> downloadCanvas(file.name.split('.')[0]+" - Deepfried.png");
-    } else if(file.type === "video/mp4"){
-        deepfryVideo(file,intensity,redBoost);
-    } else {
-        alert("Unsupported file type");
+function floatTo16BitPCM(float32){
+    const pcm16 = new Int16Array(float32.length);
+    for(let i=0;i<float32.length;i++){
+        pcm16[i] = Math.max(-1,Math.min(1,float32[i]))*0x7fff;
     }
+    return pcm16;
+}
+
+function makeDistortionCurve(a){
+    const n=44100,curve=new Float32Array(n),k=a*8;
+    for(let i=0;i<n;i++){
+        const x=i*2/n-1;
+        curve[i]=Math.tanh(x*k);
+    }
+    return curve;
+}
+
+function bitCrush(buf,bits){
+    const step = Math.pow(0.5,bits);
+    for(let c=0;c<buf.numberOfChannels;c++){
+        const d = buf.getChannelData(c);
+        for(let i=0;i<d.length;i++)
+            d[i] = Math.round(d[i]/step)*step;
+    }
+}
+
+function getDistortedFileName(file){
+    const dot = file.name.lastIndexOf(".");
+    const base = dot !== -1 ? file.name.slice(0,dot) : file.name;
+    return base + " - Distorted.mp3";
+}
+
+// -------------------- Process Single File --------------------
+async function processFile(file){
+    const ctx = new AudioContext();
+    const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
+
+    const start = startTime.value.trim()==="" ? 0 : Math.max(0,parseFloat(startTime.value));
+    const end = endTime.value.trim()==="" ? buffer.duration : Math.min(buffer.duration,parseFloat(endTime.value));
+
+    if(end <= start) return null;
+
+    const startSample = Math.floor(start*buffer.sampleRate);
+    const endSample = Math.floor(end*buffer.sampleRate);
+    const length = endSample - startSample;
+
+    const trimmed = ctx.createBuffer(buffer.numberOfChannels,length,buffer.sampleRate);
+    for(let ch=0;ch<buffer.numberOfChannels;ch++){
+        trimmed.getChannelData(ch).set(buffer.getChannelData(ch).slice(startSample,endSample));
+    }
+
+    const speedVal = Math.min(25,Math.max(0.01,parseFloat(spd.value)||1));
+    const outLength = Math.floor((length/speedVal)*(sr.value/buffer.sampleRate));
+
+    const offline = new OfflineAudioContext(trimmed.numberOfChannels,outLength,sr.value);
+    const src = offline.createBufferSource();
+    src.buffer = trimmed;
+    src.playbackRate.value = speedVal;
+
+    const shaper = offline.createWaveShaper();
+    shaper.curve = makeDistortionCurve(dist.value);
+
+    src.connect(shaper);
+    shaper.connect(offline.destination);
+    src.start();
+
+    const rendered = await offline.startRendering();
+    bitCrush(rendered,bd.value);
+
+    return bufferToMp3(rendered,128);
+}
+
+// -------------------- Process All Files --------------------
+async function processAll(){
+    const files = fileInput.files;
+    if(!files.length) return alert("Upload at least one file");
+
+    const progressBar = document.getElementById("progress-bar");
+    const progressText = document.getElementById("progress-text");
+
+    // Single file → direct download
+    if(files.length === 1){
+        progressBar.style.width = "0%";
+        progressText.textContent = "Processing 1 of 1...";
+        const blob = await processFile(files[0]);
+        if(!blob) return alert("Error processing file");
+        progressBar.style.width = "100%";
+        progressText.textContent = "Done!";
+        const url = URL.createObjectURL(blob);
+        download.href = url;
+        download.download = getDistortedFileName(files[0]);
+        download.click();
+        return;
+    }
+
+    // Multiple files → ZIP
+    const zip = new JSZip();
+    for(let i=0;i<files.length;i++){
+        progressText.textContent = `Processing file ${i+1} of ${files.length}...`;
+        const blob = await processFile(files[i]);
+        if(blob) zip.file(getDistortedFileName(files[i]), blob);
+        progressBar.style.width = `${((i+1)/files.length)*100}%`;
+    }
+
+    progressText.textContent = "Generating ZIP...";
+    const content = await zip.generateAsync({type:"blob"});
+    const url = URL.createObjectURL(content);
+    download.href = url;
+    download.download = "Distorted_Audio.zip";
+    download.click();
+    progressBar.style.width = "100%";
+    progressText.textContent = "Done!";
 }
 </script>
+
 </body>
 </html>
